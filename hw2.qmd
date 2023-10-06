@@ -1,0 +1,280 @@
+---
+title: "Hw2"
+author: "Chenjia Kuang"
+format: html
+editor: visual
+embed-resources: true
+---
+
+```{r}
+library('R.utils')
+library('tidyverse')
+library('ggplot2')
+library('data.table')
+library('dtplyr')
+library('dplyr')
+```
+
+## **Data Wrangling**
+
+```{r}
+setwd("/Users/chenjiak/Downloads")
+
+individual <- data.table::fread("chs_individual.csv")
+regional <- data.table::fread("chs_regional.csv")
+```
+
+```{r}
+#Merge the data
+data_hw2 <- merge(
+  x = individual,
+  y = regional,
+  by.x = "townname", 
+  by.y = "townname",
+  all.x = TRUE,
+  all.y = TRUE
+  )
+
+data_hw2[1:5, .(townname, pm25_mass, bmi, lon, lat)]
+```
+
+```{r}
+dim(data_hw2)
+#The data has 1200 rows and 49 variables. There is no duplicates present after the merge. 
+```
+
+```{r}
+#Finding missing values (bmi, fev, pm25_mass, o3_max), by  “male” and “hispanic” variables
+
+data_hw2[,bmi2 := fcoalesce(bmi, mean(bmi, na.rm = TRUE)), 
+         by = .(male, hispanic)]
+
+data_hw2[,fev2 := fcoalesce(fev, mean(fev, na.rm = TRUE)), 
+         by = .(male, hispanic)]
+
+data_hw2[,pm25_mass2 := fcoalesce(pm25_mass, mean(pm25_mass, na.rm = TRUE)), 
+         by = .(male, hispanic)]
+
+data_hw2[,o3_max2 := fcoalesce(o3_max, mean(o3_max, na.rm = TRUE)), 
+         by = .(male, hispanic)]
+```
+
+```{r}
+#Create a new categorical variable named “obesity_level” using the BMI measurement 
+
+#underweight BMI<14; normal BMI 14-22; overweight BMI 22-24; obese BMI>24
+
+data_hw2$obesity_level <- 
+    ifelse(data_hw2$bmi2 > 24 , "obese",
+    ifelse(data_hw2$bmi2 >= 22 & data_hw2$bmi2 <= 24, "overweight",
+    ifelse(data_hw2$bmi2 >= 14 & data_hw2$bmi2 <22, "normal", "underweight" 
+           )))
+```
+
+```{r}
+#create a summary table that contains the minimum BMI, maximum BMI, and the total number of observations per category.
+summary(data_hw2$bmi2)
+table(data_hw2$obesity_level)
+
+#The minimum BMI is 11.30, and the maximum BMI is 41.27
+#The total # of normal category is 975, obese is 103, overweight is 87, and underweight is 35.
+```
+
+```{r}
+#Create variable named “smoke_gas_exposure” 
+#"smoke""gasstove"
+data_hw2 <- data_hw2 %>% 
+  group_by(smoke, gasstove) %>%
+  mutate(smoke_gas_exposure = case_when(
+    smoke == 0 & gasstove == 0 ~ "not exposure", 
+    smoke == 1 & gasstove == 0 ~ "only smoke exposure",
+    smoke == 0 & gasstove == 1 ~ "onle gas exposure",
+    smoke == 1 & gasstove == 1 ~ "both")) %>% collect()
+
+table(data_hw2$smoke_gas_exposure)
+```
+
+```{r}
+#Create four summary tables showing the average and sd of “Forced expiratory volume in 1 second (ml)” (an asthma indicator) by town, sex, obesity level, and “smoke_gas_exposure.”
+
+#town
+summary_table1 <- data_hw2 %>% 
+  group_by(townname) %>% 
+  summarise(fev_avg = mean(fev2, na.rm=TRUE),
+            fev_sd  = sd(fev2, na.rm=TRUE), 
+            asthma.indication = mean(asthma, na.rm = TRUE))
+```
+
+```{r}
+#sex
+data_hw2 <- data_hw2 %>% 
+  mutate(sex = case_when(male == 0 ~ "Female",
+                         male == 1 ~ "Male"))
+
+summary_table2 <- data_hw2 %>% 
+  group_by(sex) %>% 
+  summarise(fev_avg = mean(fev2, na.rm=TRUE),
+            fev_sd  = sd(fev2, na.rm=TRUE), 
+            asthma.indication = mean(asthma, na.rm = TRUE))
+```
+
+```{r}
+#obesity level
+summary_table3 <- data_hw2 %>% 
+  group_by(obesity_level) %>% 
+  summarise(fev_avg = mean(fev2, na.rm=TRUE),
+            fev_sd  = sd(fev2, na.rm=TRUE), 
+            asthma.indication = mean(asthma, na.rm = TRUE))
+
+#"smoke_gas_exposure"
+summary_table4 <- data_hw2 %>% 
+  group_by(smoke_gas_exposure) %>% 
+  summarise(fev_avg = mean(fev2, na.rm=TRUE),
+            fev_sd  = sd(fev2, na.rm=TRUE), 
+            asthma.indication = mean(asthma, na.rm = TRUE))
+```
+
+## **Looking at the Data (EDA)**
+
+```{r}
+# Check the dimensions, headers, footers.
+dim(data_hw2)
+head(data_hw2)
+tail(data_hw2)
+names(data_hw2)
+typeof(data_hw2)
+```
+
+```{r}
+#Take a look at the variables.
+str(data_hw2)
+```
+
+```{r}
+#Take a closer look at the key variables.
+table(data_hw2$bmi2)
+table(data_hw2$fev2)
+table(data_hw2$pm25_mass)
+table(data_hw2$obesity_level)
+table(data_hw2$smoke_gas_exposure)
+
+summary(data_hw2$bmi2)
+summary(data_hw2$fev2)
+summary(data_hw2$pm25_mass)
+summary(data_hw2$obesity_level)
+summary(data_hw2$smoke_gas_exposure)
+```
+
+```{r}
+#Calculate summary statistics
+cor(data_hw2$bmi2, data_hw2$fev2, use = "complete")
+cor(data_hw2$pm25_mass, data_hw2$fev2, use = "complete")
+
+#Slight positive correlation between BMI and FEV.
+#Slight negative correlation between pm2.5 mass andFEV.
+```
+
+```{r}
+#Exploratory graphs
+hist(data_hw2$bmi2)
+hist(data_hw2$fev2, breaks=100)
+hist(data_hw2$pm25_mass)
+```
+
+```{r}
+#Exploratory graphs
+data_hw2 %>%
+  filter(!(fev2 %in% NA)) %>%
+  filter(!(smoke_gas_exposure %in% NA)) %>%
+  ggplot() +
+  geom_boxplot(mapping = aes(x = fev2, fill = smoke_gas_exposure))
+```
+
+## **Visualization**
+
+```{r}
+#Facet plot showing scatterplots with regression lines of BMI vs FEV by “townname”.
+data_hw2 %>%
+  filter(!(townname %in% NA)) %>%
+  ggplot(mapping = aes(x = bmi2, y = fev2, color = townname)) +
+  geom_point() +
+  stat_smooth(method = lm) +
+  facet_wrap(~ townname, nrow = 5)
+```
+
+```{r}
+#Histogram of FEV by BMI category
+data_hw2 %>%
+  filter(!(obesity_level %in% NA)) %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x = fev2, fill = obesity_level)) +
+  labs(title = "FEV (1mL) by BMI category", x = "FEV", y = "Count")+
+  scale_fill_brewer(palette = "PuOr")
+```
+
+```{r}
+#Histogram of FEV by smoke/gas exposure
+data_hw2 %>%
+  filter(!(smoke_gas_exposure %in% NA)) %>%
+  ggplot() +
+  geom_histogram(mapping = aes(x = fev2, fill = smoke_gas_exposure)) +
+  labs(title = "FEV (1mL) by Smoke/gas Exposure", x = "FEV", y = "Count") +
+  scale_fill_brewer(palette = "Spectral")
+```
+
+```{r}
+#Barchart of BMI by smoke/gas exposure.
+data_hw2 %>%
+  filter(!(smoke_gas_exposure %in% NA)) %>%
+  filter(!(obesity_level %in% NA)) %>%
+  ggplot() +
+  geom_bar(mapping = aes(x = obesity_level, fill = smoke_gas_exposure)) +
+  labs(title = "BMI by Smoke/gas Exposure", x = "BMI", y = "Count") +
+  scale_fill_brewer(palette = "YlGnBu")
+```
+
+```{r}
+#Statistical summary graph of FEV by BMI category.
+data_hw2 %>%
+  filter(!(obesity_level %in% NA)) %>%
+  ggplot() +
+  geom_boxplot(mapping = aes(x = fev2, y = obesity_level)) +
+  labs(title = "FEV (1mL) by BMI category", x = "FEV", y = "BMI category")
+```
+
+```{r}
+#Statistical summary graphs of FEV by smoke/gas exposure category
+data_hw2 %>%
+  filter(!(smoke_gas_exposure %in% NA)) %>%
+  ggplot() +
+  geom_boxplot(mapping = aes(x = fev2, y = smoke_gas_exposure)) +
+  labs(title = "FEV (1mL) by BMI category", x = "FEV", y = "Smoke/gas exposure category")
+```
+
+```{r}
+#A leaflet map showing the concentrations of PM2.5 mass in each of the CHS communities.
+library('leaflet')
+
+pm25_mass_pal <- colorNumeric(c('red', 'yellow', 'blue'), domain = data_hw2$pm25_mass)
+
+leaflet(data_hw2) %>%
+  addProviderTiles('OpenStreetMap') %>%
+  addCircles(lat = ~lat, lng = ~lon, 
+             color = ~pm25_mass_pal(pm25_mass),
+             label = ~paste0(round(pm25_mass, 2), 'pm25_mass'),
+             opacity = 1, fillOpacity = 1, radius = 500) %>%
+  addLegend('bottomleft', pal = pm25_mass_pal, 
+            values = data_hw2$pm25_mass, 
+            title = 'The concentrations of PM2.5 mass in Communities',
+            opacity = 1)
+```
+
+```{r}
+#Choose a visualization to examine whether PM2.5 mass is associated with FEV.
+data_hw2 %>%
+  filter(!(pm25_mass %in% NA)) %>%
+  filter(!(fev2 %in% NA)) %>%
+  ggplot() +
+  geom_jitter(mapping = aes(x = pm25_mass, y = fev2)) +
+  labs(title = "PM2.5 mass by FEV (1mL)", x = "PM2.5 mass", y = "FEV")
+```
